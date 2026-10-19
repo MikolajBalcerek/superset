@@ -49,6 +49,7 @@ from starlette.middleware.authentication import AuthenticationMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import HTTPConnection, Request
 from starlette.responses import HTMLResponse, JSONResponse, Response
+from starlette.routing import get_route_path
 
 from superset.mcp_service.utils.error_sanitization import (
     sanitize_for_log as _sanitize_for_log,
@@ -296,12 +297,17 @@ def _prefers_browser_html(conn: HTTPConnection) -> bool:
     )
 
 
+def _normalize_path(path: str) -> str:
+    """Normalise a path so ``/mcp`` and ``/mcp/`` compare equal."""
+    return path.rstrip("/") or "/"
+
+
 class BrowserHelloMiddleware(BaseHTTPMiddleware):
     """Starlette middleware that returns a browser-friendly hello page.
 
-    Intercepts GET/HEAD requests with a browser Accept header to the MCP
-    endpoint before they reach FastMCP's router (which returns 405 for GET).
-    Works regardless of whether MCP_AUTH_ENABLED is True or False.
+    Intercepts GET/HEAD requests with a browser Accept header before they
+    reach FastMCP's router (which returns 405 for GET). Works regardless
+    of whether MCP_AUTH_ENABLED is True or False.
 
     Only the MCP endpoint path is intercepted. Other routes are passed through.
 
@@ -323,7 +329,7 @@ class BrowserHelloMiddleware(BaseHTTPMiddleware):
         )
         # The streamable-HTTP endpoint FastMCP mounts (``/mcp`` by default).
         self._mcp_path = _normalize_path(
-            mcp_path or fastmcp.settings.streamable_http_path
+            mcp_path if mcp_path is not None else fastmcp.settings.streamable_http_path
         )
 
     async def dispatch(
@@ -331,16 +337,13 @@ class BrowserHelloMiddleware(BaseHTTPMiddleware):
     ) -> Response:
         if (
             request.method in ("GET", "HEAD")
-            and _normalize_path(request.url.path) == self._mcp_path
+            # Route path, as Starlette's router matches it: without the
+            # root_path of a parent Mount or of a proxy prefix.
+            and _normalize_path(get_route_path(request.scope)) == self._mcp_path
             and _prefers_browser_html(request)
         ):
             return HTMLResponse(content=self._html, status_code=200)
         return await call_next(request)
-
-
-def _normalize_path(path: str) -> str:
-    """Compare paths regardless of a trailing slash (``/mcp`` == ``/mcp/``)."""
-    return path.rstrip("/") or "/"
 
 
 def _auth_error_handler(conn: HTTPConnection, exc: AuthenticationError) -> Response:

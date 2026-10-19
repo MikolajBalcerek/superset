@@ -1087,6 +1087,9 @@ def _build_starlette_middleware(
         )
         mcp_hello_page = None
     page_config: dict[str, Any] = {**base_page_config, **(mcp_hello_page or {})}
+    # BrowserHelloMiddleware serves its page on fastmcp.settings.streamable_http_path,
+    # the path FastMCP uses when http_app()/run() get no path=. If a custom path= is
+    # ever passed to them, pass the same value here as mcp_path.
     return [
         StarletteMiddleware(
             BrowserHelloMiddleware,
