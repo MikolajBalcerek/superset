@@ -57,6 +57,7 @@ from superset.sql.parse import (
     LimitMethod,
     Partition,
     process_jinja_sql,
+    references_only_grouped_columns,
     remove_quotes,
     RLSMethod,
     sanitize_clause,
@@ -8739,6 +8740,28 @@ def test_has_aggregate_fail_closed(expression: str, expected: bool) -> None:
     that grant something to aggregates and must not grant it on a guess.
     """
     assert has_aggregate(expression, fail_open=False) is expected
+
+
+@pytest.mark.parametrize(
+    "expression,group_by,engine,expected",
+    [
+        ("'WIP'", ["channel"], "postgresql", True),
+        ("NULL", ["a"], "postgresql", True),
+        ("(a - b) / b", ["a", "b", "c"], "base", True),
+        ("(A - B) / B", ['"A"', "b"], "snowflake", True),
+        ("t.a + 1", ["a"], "base", True),
+        ("GREATEST(confirmed, predicted)", ["longitude", "latitude"], "base", False),
+        ("a + c", ["a", "b"], "base", False),
+        ("a * 2", ["a + 1"], "base", False),
+        ("ts", ["DATE_TRUNC('day', ts)"], "postgresql", False),
+        # Returns True on parsing error
+        (")(", ["a"], "base", True),
+    ],
+)
+def test_references_only_grouped_columns(
+    expression: str, group_by: list[str], engine: str, expected: bool
+) -> None:
+    assert references_only_grouped_columns(expression, group_by, engine) is expected
 
 
 @pytest.mark.parametrize(
